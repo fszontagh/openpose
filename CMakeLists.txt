@@ -9,5 +9,5 @@ endif()
 
 include_directories(includes)
 
-add_executable(openpose src/openpose.cpp)
+add_executable(openpose src/main.cpp src/openpose.cpp)
 target_link_libraries(openpose ${OpenCV_LIBS})

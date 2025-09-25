@@ -10,6 +10,7 @@
 #include <opencv2/dnn.hpp>
 #include <opencv2/objdetect.hpp>
 #include <opencv2/opencv.hpp>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -23,7 +24,6 @@ using namespace std;
 // --- Public Enums and Constants ---
 
 enum class ModelType { BODY, HAND, FACE, FACE_HAAR, PERSON, HAND_HAAR };
-enum class Mode { HAND, BODY, BODY_AND_HAND, FACE, ALL };
 
 const vector<Scalar> PERSON_COLORS = {Scalar(255, 0, 0),   Scalar(0, 255, 0),
                                       Scalar(0, 0, 255),   Scalar(255, 255, 0),
@@ -106,7 +106,9 @@ private:
     string models_dir = "./models";
     bool enable_validation = true;
     bool enable_interpolation = true;
-    Mode mode = Mode::ALL;
+    bool process_body = true; // Default mode is now just body
+    bool process_hand = false;
+    bool process_face = false;
     bool verbose = false;
     bool multi_person = false;
   };
@@ -125,7 +127,7 @@ private:
            << "  --nms-threshold <value>    Non-Maximum Suppression threshold for multi-person (default: 0.4)\n"
            << "  -b, --blend <factor>       Original image opacity (0.0-1.0, default: 0.5)\n"
            << "  -m, --models <directory>   Models base directory (default: ./models)\n"
-           << "  -M, --mode <mode>          Mode: hand, body, both, face, all (default: all)\n"
+           << "  -M, --mode <modes>         Modes: comma-separated list of 'body', 'hand', 'face', 'all'. (default: body)\n"
            << "  -v, --verbose              Enable verbose output.\n"
            << "  --multi-person             Enable multi-person detection (requires person model).\n"
            << "  --no-validate-connectivity Deactivates filtering of noisy points (on by default)\n"
@@ -157,6 +159,8 @@ private:
           {"no-validate-connectivity", no_argument, 0, 1},
           {"no-interpolate", no_argument, 0, 2},
           {0, 0, 0, 0}};
+
+      bool mode_was_set = false;
       while ((opt = getopt_long(argc, argv, "i:o:b:t:m:M:v", long_options, &option_index)) != -1) {
           switch (opt) {
           case 'i': args.image_path = optarg; break;
@@ -166,15 +170,30 @@ private:
           case 'm': args.models_dir = optarg; break;
           case 'v': args.verbose = true; break;
           case 'M':
-              if (!strcmp(optarg, "hand")) args.mode = Mode::HAND;
-              else if (!strcmp(optarg, "body")) args.mode = Mode::BODY;
-              else if (!strcmp(optarg, "both")) args.mode = Mode::BODY_AND_HAND;
-              else if (!strcmp(optarg, "face")) args.mode = Mode::FACE;
-              else if (!strcmp(optarg, "all")) args.mode = Mode::ALL;
-              else {
-                  cerr << "Invalid mode specified: " << optarg << endl;
-                  printUsage();
-                  exit(1);
+              mode_was_set = true;
+              args.process_body = false;
+              args.process_hand = false;
+              args.process_face = false;
+              {
+                  string modes_str(optarg);
+                  stringstream ss(modes_str);
+                  string mode;
+                  while(getline(ss, mode, ',')) {
+                      mode.erase(0, mode.find_first_not_of(" \t\n\r"));
+                      mode.erase(mode.find_last_not_of(" \t\n\r") + 1);
+                      if (mode == "body") args.process_body = true;
+                      else if (mode == "hand" || mode == "hands") args.process_hand = true;
+                      else if (mode == "face") args.process_face = true;
+                      else if (mode == "all") {
+                          args.process_body = true;
+                          args.process_hand = true;
+                          args.process_face = true;
+                      } else {
+                          cerr << "Invalid mode specified: " << mode << endl;
+                          printUsage();
+                          exit(1);
+                      }
+                  }
               }
               break;
           case 1: args.enable_validation = false; break;
@@ -185,6 +204,9 @@ private:
           case '?': exit(1);
           default: break;
           }
+      }
+      if (mode_was_set && !args.process_body && !args.process_hand && !args.process_face) {
+          args.process_body = true;
       }
   }
 
@@ -251,27 +273,23 @@ private:
   }
 
   void loadAllModels() {
-      bool p_body = (args.mode == Mode::BODY || args.mode == Mode::BODY_AND_HAND || args.mode == Mode::ALL);
-      bool p_hand = (args.mode == Mode::HAND || args.mode == Mode::BODY_AND_HAND || args.mode == Mode::ALL);
-      bool p_face = (args.mode == Mode::FACE || args.mode == Mode::ALL);
-
-      if (p_body || (p_hand && args.multi_person) || (p_face && args.multi_person) ) {
-          if (!body_net.empty()) return;
+      // Body model is needed for body AND for hand detection (to find wrists).
+      if ((args.process_body || args.process_hand) && body_net.empty()) {
           if (args.verbose) cout << "Verbose: Loading BODY model..." << endl;
           auto paths = resolveModelPaths(ModelType::BODY);
           if (!loadModel(body_net, paths)) throw runtime_error("Failed to load BODY model.");
       }
-      if (p_hand) {
+      if (args.process_hand && hand_net.empty()) {
           if (args.verbose) cout << "Verbose: Loading HAND model..." << endl;
           auto paths = resolveModelPaths(ModelType::HAND);
           if (!loadModel(hand_net, paths)) throw runtime_error("Failed to load HAND model.");
       }
-      if (p_face) {
+      if (args.process_face && face_net.empty()) {
           if (args.verbose) cout << "Verbose: Loading FACE model..." << endl;
           auto paths = resolveModelPaths(ModelType::FACE);
           if (!loadModel(face_net, paths)) throw runtime_error("Failed to load FACE model.");
       }
-      if (args.multi_person) {
+      if (args.multi_person && person_net.empty()) {
           if (args.verbose) cout << "Verbose: Loading PERSON detector model..." << endl;
           auto paths = resolveModelPaths(ModelType::PERSON);
           if(!loadModel(person_net, paths)) throw runtime_error("Failed to load PERSON model.");
@@ -285,7 +303,6 @@ private:
   vector<float> runOpenPose(const cv::Mat &image, Net &net, ModelType type, float threshold = 0.05f);
   void drawKeypoints(cv::Mat &image, const vector<float> &keypoints, ModelType type, Scalar color);
   Rect makeHandRect(Point wrist, int box_size, const Mat &img);
-  vector<Rect> detectHands(CascadeClassifier& cascade, const Mat& img);
   vector<float> postProcessKeypoints(const vector<float> &keypoints, ModelType type, bool enable_validation, bool enable_interpolation);
   vector<Point> validate_connectivity(const vector<Point> &points, const vector<pair<int, int>> &pairs, float max_dist);
   vector<Point> interpolate_chain(const vector<Point> &points, const vector<int> &chain);

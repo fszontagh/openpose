@@ -1,16 +1,13 @@
 #include "openpose.hpp"
 #include <set>
 
-// Új, egységesített feldolgozó függvény. Ezt hívja a single- és multi-person mód is.
+// New, unified processing function. Called by both single- and multi-person modes.
 void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person_rects) {
-    bool process_body = (args.mode == Mode::BODY || args.mode == Mode::BODY_AND_HAND || args.mode == Mode::ALL);
-    bool process_hand = (args.mode == Mode::HAND || args.mode == Mode::BODY_AND_HAND || args.mode == Mode::ALL);
-    bool process_face = (args.mode == Mode::FACE || args.mode == Mode::ALL);
 
     for (size_t i = 0; i < person_rects.size(); ++i) {
         const auto& person_rect = person_rects[i];
 
-        // Színek meghatározása attól függően, hogy single- vagy multi-person módban vagyunk.
+        // Determine colors based on whether we are in single- or multi-person mode.
         Scalar color_body, color_hand, color_face;
         if (args.multi_person) {
             Scalar person_color = PERSON_COLORS[i % PERSON_COLORS.size()];
@@ -28,10 +25,10 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
         Mat person_crop = img(person_rect);
         vector<float> bodyKeypoints, handKeypoints, faceKeypoints;
 
-        // A testpontokra a kéz detektálásához is szükség van, ezért akkor is futtatjuk, ha csak a kéz kell.
-        if (process_body || process_hand) {
+        // Body keypoints are also needed for hand detection, so we run it even if only hands are requested.
+        if (args.process_body || args.process_hand) {
             bodyKeypoints = runOpenPose(person_crop, body_net, ModelType::BODY, args.threshold);
-            // Kulcspontok koordinátáinak átszámítása a kivágott képről a teljes képre.
+            // Convert keypoint coordinates from the cropped image to the full image.
             for(size_t j=0; j<bodyKeypoints.size(); j+=3) {
                 if(bodyKeypoints[j+2] > 0){
                     bodyKeypoints[j] += person_rect.x;
@@ -40,7 +37,7 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
             }
         }
 
-        if (process_hand) {
+        if (args.process_hand) {
             Point r_wrist(-1,-1), l_wrist(-1,-1);
             if(!bodyKeypoints.empty() && bodyKeypoints.size() >= 25*3){
                 if(bodyKeypoints[4*3+2] > 0) r_wrist = Point(bodyKeypoints[4*3], bodyKeypoints[4*3+1]);
@@ -63,7 +60,7 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
             handKeypoints.insert(handKeypoints.end(),r_hand.begin(),r_hand.end());
         }
 
-        if (process_face) {
+        if (args.process_face) {
             auto haar_paths = resolveModelPaths(ModelType::FACE_HAAR);
             CascadeClassifier face_cascade;
             if(face_cascade.load(haar_paths["haarcascade"])) {
@@ -71,7 +68,10 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
                 Mat gray;
                 cvtColor(person_crop, gray, COLOR_BGR2GRAY);
                 equalizeHist(gray, gray);
-                face_cascade.detectMultiScale(gray, faces, 1.1, 3, 0 | CASCADE_SCALE_IMAGE, Size(50, 50));
+
+                // Dynamic minimum face size based on image resolution for more reliable detection.
+                int min_face_size = std::max(30, person_crop.cols / 10);
+                face_cascade.detectMultiScale(gray, faces, 1.1, 3, 0 | CASCADE_SCALE_IMAGE, Size(min_face_size, min_face_size));
 
                 if(!faces.empty()){
                     Rect face_rect_local = faces[0];
@@ -88,10 +88,10 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
             } else { cerr << "Error: Could not load Haar Cascade model for face." << endl; faceKeypoints = vector<float>(70*3, -1.f); }
         }
 
-        // Utófeldolgozás és kirajzolás
-        if (process_body) { bodyKeypoints=postProcessKeypoints(bodyKeypoints,ModelType::BODY,args.enable_validation,args.enable_interpolation); drawKeypoints(overlay,bodyKeypoints,ModelType::BODY,color_body); }
-        if (process_hand) { handKeypoints=postProcessKeypoints(handKeypoints,ModelType::HAND,args.enable_validation,args.enable_interpolation); drawKeypoints(overlay,handKeypoints,ModelType::HAND,color_hand); }
-        if (process_face) { faceKeypoints=postProcessKeypoints(faceKeypoints,ModelType::FACE,false,false); drawKeypoints(overlay,faceKeypoints,ModelType::FACE,color_face); }
+        // Post-processing and drawing.
+        if (args.process_body) { bodyKeypoints=postProcessKeypoints(bodyKeypoints,ModelType::BODY,args.enable_validation,args.enable_interpolation); drawKeypoints(overlay,bodyKeypoints,ModelType::BODY,color_body); }
+        if (args.process_hand) { handKeypoints=postProcessKeypoints(handKeypoints,ModelType::HAND,args.enable_validation,args.enable_interpolation); drawKeypoints(overlay,handKeypoints,ModelType::HAND,color_hand); }
+        if (args.process_face) { faceKeypoints=postProcessKeypoints(faceKeypoints,ModelType::FACE,false,false); drawKeypoints(overlay,faceKeypoints,ModelType::FACE,color_face); }
     }
 }
 
@@ -111,7 +111,7 @@ void OpenPose::runMultiPersonPipeline(Mat& img, Mat& overlay){
 void OpenPose::runSinglePersonPipeline(Mat& img, Mat& overlay){
     if (args.verbose) cout << "Verbose: Single-person mode enabled." << endl;
     vector<Rect> person_rects;
-    person_rects.push_back(Rect(0, 0, img.cols, img.rows)); // A teljes kép egyetlen személyként kezelve
+    person_rects.push_back(Rect(0, 0, img.cols, img.rows)); // Treat the entire image as a single person.
     processPersons(img, overlay, person_rects);
 }
 
@@ -198,9 +198,6 @@ void OpenPose::drawKeypoints(cv::Mat &image, const vector<float> &keypoints, Mod
     } else if (type == ModelType::FACE) {
         pairs = &POSE_PAIRS_FACE;
     } else { // HAND
-      // This is a simplified logic for hand drawing.
-      // It assumes the first 21 keypoints are left, the next 21 are right.
-      // For a more robust solution, this part might need refinement.
         static vector<pair<int, int>> HAND_PAIRS;
         HAND_PAIRS.clear();
         if (keypoints.size() >= 21 * 3) { // Left Hand
@@ -214,10 +211,19 @@ void OpenPose::drawKeypoints(cv::Mat &image, const vector<float> &keypoints, Mod
         pairs = &HAND_PAIRS;
     }
 
-    int lineThickness = max(1, (image.cols + image.rows) / 400);
+    // Dynamically set line thickness based on image resolution.
+    int lineThickness;
+    if (type == ModelType::FACE) {
+        // Thinner lines are needed for the face due to dense keypoints.
+        lineThickness = max(1, (image.cols + image.rows) / 1200);
+    } else {
+        // Thicker lines are fine for body and hands.
+        lineThickness = max(1, (image.cols + image.rows) / 800);
+    }
+
     set<int> connected_indices;
 
-    // Draw lines and collect indices of connected points
+    // Draw lines and collect indices of connected points.
     for (const auto &p : *pairs) {
         if (p.first >= points.size() || p.second >= points.size()) continue;
         Point pA = points[p.first];
@@ -229,12 +235,12 @@ void OpenPose::drawKeypoints(cv::Mat &image, const vector<float> &keypoints, Mod
         }
     }
 
-    // Draw circles only for points that are part of a connection
+    // Only draw circles for points that are part of a connection.
     for (int index : connected_indices) {
         if (index < points.size()) {
             const auto &point = points[index];
             if (point.x > 0) {
-                circle(image, point, lineThickness + 2, color, FILLED, LINE_AA);
+                circle(image, point, lineThickness + 1, color, FILLED, LINE_AA);
             }
         }
     }
@@ -269,7 +275,6 @@ vector<float> OpenPose::postProcessKeypoints(const vector<float> &keypoints, Mod
         }
         final_points = validate_connectivity(final_points, POSE_PAIRS_BODY_25, dynamic_max_dist);
     }
-    // Simplified post-processing for hands and face for now
 
     vector<float> processed_keypoints;
     for (auto &p : final_points) {

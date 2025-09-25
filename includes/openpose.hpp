@@ -278,7 +278,7 @@ private:
       }
   }
 
-
+  void processPersons(Mat& img, Mat& overlay, const vector<Rect>& person_rects);
   void runMultiPersonPipeline(Mat& img, Mat& overlay);
   void runSinglePersonPipeline(Mat& img, Mat& overlay);
   vector<Rect> detectPersons(Net &net, const Mat &frame, float conf_threshold, float nms_threshold, bool verbose);

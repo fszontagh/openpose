@@ -25,14 +25,13 @@ void ParameterHandler::displayHelp() {
       << "  -M, --mode <modes>         Modes: comma-separated list of 'body', "
          "'hand', 'face', 'all' (default: body).\n"
       << "  -v, --verbose              Enable verbose output.\n"
-      << "  --multi-person             Enable multi-person detection (requires "
-         "person model).\n"
+      << "  --single-person            Disable multi-person detection (multi-person is on by default).\n"
       << "  --no-validate-connectivity Deactivates filtering of noisy points "
          "(on by default).\n"
-
       << "  --no-interpolate           Deactivates estimation of missing "
          "joints (on by default).\n"
       << "  --draw-foot                Draw the foot keypoints (off by default).\n"
+      << "  --no-rainbow               Disable rainbow coloring for skeletons.\n"
       << "  -h, --help                 Display this help message.\n";
 }
 
@@ -65,10 +64,11 @@ ProgramOptions ParameterHandler::parse(int argc, char **argv) {
       {"models", required_argument, 0, 'm'},
       {"mode", required_argument, 0, 'M'},
       {"verbose", no_argument, 0, 'v'},
-      {"multi-person", no_argument, 0, 1003},
+      {"single-person", no_argument, 0, 1003},
       {"no-validate-connectivity", no_argument, 0, 1004},
       {"no-interpolate", no_argument, 0, 1005},
       {"draw-foot", no_argument, 0, 1006},
+      {"no-rainbow", no_argument, 0, 1007},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}};
 
@@ -131,7 +131,7 @@ ProgramOptions ParameterHandler::parse(int argc, char **argv) {
       opts.nms_threshold = parseFloat(optarg, "--nms-threshold");
       break;
     case 1003:
-      opts.multi_person = true;
+      opts.multi_person = false;
       break;
     case 1004:
       opts.enable_validation = false;
@@ -141,6 +141,9 @@ ProgramOptions ParameterHandler::parse(int argc, char **argv) {
       break;
     case 1006:
       opts.draw_foot = true;
+      break;
+    case 1007:
+      opts.no_rainbow = true;
       break;
     case '?':
       // getopt_long already printed an error message.

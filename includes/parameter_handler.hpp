@@ -20,8 +20,9 @@ struct ProgramOptions {
     bool process_hand = false;
     bool process_face = false;
     bool verbose = false;
-    bool multi_person = false;
+    bool multi_person = true; // Changed default to true
     bool draw_foot = false;
+    bool no_rainbow = false;
 };
 
 // Custom exception for parsing errors

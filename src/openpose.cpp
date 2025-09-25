@@ -38,12 +38,18 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
         }
 
         if (opts.process_hand) {
-            Point r_wrist(-1,-1), l_wrist(-1,-1);
+            Point r_wrist(-1,-1), l_wrist(-1,-1), r_elbow(-1,-1), l_elbow(-1,-1);
             if(!bodyKeypoints.empty() && bodyKeypoints.size() >= 25*3){
                 if(bodyKeypoints[4*3+2] > 0) r_wrist = Point(bodyKeypoints[4*3], bodyKeypoints[4*3+1]);
                 if(bodyKeypoints[7*3+2] > 0) l_wrist = Point(bodyKeypoints[7*3], bodyKeypoints[7*3+1]);
+                if(bodyKeypoints[3*3+2] > 0) r_elbow = Point(bodyKeypoints[3*3], bodyKeypoints[3*3+1]);
+                if(bodyKeypoints[6*3+2] > 0) l_elbow = Point(bodyKeypoints[6*3], bodyKeypoints[6*3+1]);
             }
-            Rect r_h_rect=makeHandRect(r_wrist,368,img), l_h_rect=makeHandRect(l_wrist,368,img);
+
+            int r_box_size = (r_wrist.x > 0 && r_elbow.x > 0) ? (int)(norm(r_wrist - r_elbow) * 2.5f) : 368;
+            int l_box_size = (l_wrist.x > 0 && l_elbow.x > 0) ? (int)(norm(l_wrist - l_elbow) * 2.5f) : 368;
+
+            Rect r_h_rect=makeHandRect(r_wrist,r_box_size,img), l_h_rect=makeHandRect(l_wrist,l_box_size,img);
             vector<float> l_hand, r_hand;
 
             if(l_h_rect.area()>0){
@@ -194,11 +200,13 @@ void OpenPose::drawKeypoints(cv::Mat &image, const vector<float> &keypoints, Mod
 
     const vector<pair<int, int>> *pairs;
     const vector<Scalar>* colors = &PERSON_COLORS; // Default to person colors
-    bool use_rainbow = (type == ModelType::BODY && !opts.multi_person);
+    bool use_rainbow = (type == ModelType::BODY && !opts.no_rainbow);
 
     if (type == ModelType::BODY) {
         pairs = &POSE_PAIRS_BODY_25;
-        if(use_rainbow) colors = &RAINBOW_COLORS;
+        if(use_rainbow) {
+            colors = &RAINBOW_COLORS;
+        }
     } else if (type == ModelType::FACE) {
         pairs = &POSE_PAIRS_FACE;
     } else { // HAND

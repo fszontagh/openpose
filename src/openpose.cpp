@@ -9,7 +9,7 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
 
         // Determine colors based on whether we are in single- or multi-person mode.
         Scalar color_body, color_hand, color_face;
-        if (args.multi_person) {
+        if (opts.multi_person) {
             Scalar person_color = PERSON_COLORS[i % PERSON_COLORS.size()];
             color_body = person_color;
             color_hand = person_color;
@@ -20,14 +20,14 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
             color_face = Scalar(0, 255, 255);
         }
 
-        if (args.verbose) cout << "Verbose: Processing person " << (i + 1) << " in ROI: " << person_rect << endl;
+        if (opts.verbose) cout << "Verbose: Processing person " << (i + 1) << " in ROI: " << person_rect << endl;
 
         Mat person_crop = img(person_rect);
         vector<float> bodyKeypoints, handKeypoints, faceKeypoints;
 
         // Body keypoints are also needed for hand detection, so we run it even if only hands are requested.
-        if (args.process_body || args.process_hand) {
-            bodyKeypoints = runOpenPose(person_crop, body_net, ModelType::BODY, args.threshold);
+        if (opts.process_body || opts.process_hand) {
+            bodyKeypoints = runOpenPose(person_crop, body_net, ModelType::BODY, opts.threshold);
             // Convert keypoint coordinates from the cropped image to the full image.
             for(size_t j=0; j<bodyKeypoints.size(); j+=3) {
                 if(bodyKeypoints[j+2] > 0){
@@ -37,7 +37,7 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
             }
         }
 
-        if (args.process_hand) {
+        if (opts.process_hand) {
             Point r_wrist(-1,-1), l_wrist(-1,-1);
             if(!bodyKeypoints.empty() && bodyKeypoints.size() >= 25*3){
                 if(bodyKeypoints[4*3+2] > 0) r_wrist = Point(bodyKeypoints[4*3], bodyKeypoints[4*3+1]);
@@ -47,12 +47,12 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
             vector<float> l_hand, r_hand;
 
             if(l_h_rect.area()>0){
-                l_hand=runOpenPose(img(l_h_rect),hand_net,ModelType::HAND,args.threshold);
+                l_hand=runOpenPose(img(l_h_rect),hand_net,ModelType::HAND,opts.threshold);
                 for(size_t j=0;j<l_hand.size();j+=3) if(l_hand[j+2]>0){ l_hand[j]+=l_h_rect.x; l_hand[j+1]+=l_h_rect.y; }
             } else { l_hand=vector<float>(21*3,-1.f); }
 
             if(r_h_rect.area()>0){
-                r_hand=runOpenPose(img(r_h_rect),hand_net,ModelType::HAND,args.threshold);
+                r_hand=runOpenPose(img(r_h_rect),hand_net,ModelType::HAND,opts.threshold);
                 for(size_t j=0;j<r_hand.size();j+=3) if(r_hand[j+2]>0){ r_hand[j]+=r_h_rect.x; r_hand[j+1]+=r_h_rect.y; }
             } else { r_hand=vector<float>(21*3,-1.f); }
 
@@ -60,7 +60,7 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
             handKeypoints.insert(handKeypoints.end(),r_hand.begin(),r_hand.end());
         }
 
-        if (args.process_face) {
+        if (opts.process_face) {
             auto haar_paths = resolveModelPaths(ModelType::FACE_HAAR);
             CascadeClassifier face_cascade;
             if(face_cascade.load(haar_paths["haarcascade"])) {
@@ -77,7 +77,7 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
                     Rect face_rect_local = faces[0];
                     Rect face_rect_global = face_rect_local + person_rect.tl();
 
-                    faceKeypoints = runOpenPose(img(face_rect_global), face_net, ModelType::FACE, args.threshold);
+                    faceKeypoints = runOpenPose(img(face_rect_global), face_net, ModelType::FACE, opts.threshold);
                     for (size_t j = 0; j < faceKeypoints.size(); j += 3) {
                         if (faceKeypoints[j + 2] > 0) {
                             faceKeypoints[j] += face_rect_global.x;
@@ -89,17 +89,17 @@ void OpenPose::processPersons(Mat& img, Mat& overlay, const vector<Rect>& person
         }
 
         // Post-processing and drawing.
-        if (args.process_body) { bodyKeypoints=postProcessKeypoints(bodyKeypoints,ModelType::BODY,args.enable_validation,args.enable_interpolation); drawKeypoints(overlay,bodyKeypoints,ModelType::BODY,color_body); }
-        if (args.process_hand) { handKeypoints=postProcessKeypoints(handKeypoints,ModelType::HAND,args.enable_validation,args.enable_interpolation); drawKeypoints(overlay,handKeypoints,ModelType::HAND,color_hand); }
-        if (args.process_face) { faceKeypoints=postProcessKeypoints(faceKeypoints,ModelType::FACE,false,false); drawKeypoints(overlay,faceKeypoints,ModelType::FACE,color_face); }
+        if (opts.process_body) { bodyKeypoints=postProcessKeypoints(bodyKeypoints,ModelType::BODY,opts.enable_validation,opts.enable_interpolation); drawKeypoints(overlay,bodyKeypoints,ModelType::BODY,color_body); }
+        if (opts.process_hand) { handKeypoints=postProcessKeypoints(handKeypoints,ModelType::HAND,opts.enable_validation,opts.enable_interpolation); drawKeypoints(overlay,handKeypoints,ModelType::HAND,color_hand); }
+        if (opts.process_face) { faceKeypoints=postProcessKeypoints(faceKeypoints,ModelType::FACE,false,false); drawKeypoints(overlay,faceKeypoints,ModelType::FACE,color_face); }
     }
 }
 
 
 void OpenPose::runMultiPersonPipeline(Mat& img, Mat& overlay){
-    if (args.verbose) cout << "Verbose: Multi-person mode enabled." << endl;
-    vector<Rect> person_rects = detectPersons(person_net, img, args.person_threshold, args.nms_threshold, args.verbose);
-    if (args.verbose) cout << "Verbose: Found " << person_rects.size() << " person(s) after NMS." << endl;
+    if (opts.verbose) cout << "Verbose: Multi-person mode enabled." << endl;
+    vector<Rect> person_rects = detectPersons(person_net, img, opts.person_threshold, opts.nms_threshold, opts.verbose);
+    if (opts.verbose) cout << "Verbose: Found " << person_rects.size() << " person(s) after NMS." << endl;
 
     if (person_rects.empty()) {
         cout << "No persons detected in the image." << endl;
@@ -109,7 +109,7 @@ void OpenPose::runMultiPersonPipeline(Mat& img, Mat& overlay){
 }
 
 void OpenPose::runSinglePersonPipeline(Mat& img, Mat& overlay){
-    if (args.verbose) cout << "Verbose: Single-person mode enabled." << endl;
+    if (opts.verbose) cout << "Verbose: Single-person mode enabled." << endl;
     vector<Rect> person_rects;
     person_rects.push_back(Rect(0, 0, img.cols, img.rows)); // Treat the entire image as a single person.
     processPersons(img, overlay, person_rects);

@@ -4,7 +4,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <getopt.h>
+#include "parameter_handler.hpp"
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <iostream>
 #include <map>
 #include <opencv2/dnn.hpp>
@@ -57,162 +60,52 @@ const vector<pair<int, int>> POSE_PAIRS_FACE = {
 
 class OpenPose {
 public:
-  // The constructor receives the command line arguments
-  OpenPose(int argc, char **argv) {
-    parseArgs(argc, argv);
+  OpenPose(const ProgramOptions& options) : opts(options) {
     loadAllModels();
   }
 
   // The main run method that controls the entire process
   void run() {
-    if (args.image_path.empty()) {
-        printUsage();
+    if (opts.image_path.empty()) {
+        // This case should ideally be handled by ParameterHandler, but as a fallback:
+        cerr << "Error: No input image path provided." << endl;
         return;
     }
 
-    if (args.verbose) cout << "Verbose: Reading image: " << args.image_path << endl;
-    Mat img = imread(args.image_path);
+    if (opts.verbose) cout << "Verbose: Reading image: " << opts.image_path << endl;
+    Mat img = imread(opts.image_path);
     if (img.empty()) {
-        cerr << "Error: Could not read the input image: " << args.image_path << "\n";
+        cerr << "Error: Could not read the input image: " << opts.image_path << "\n";
         return;
     }
-    if (args.verbose) cout << "Verbose: Image loaded successfully. Size: " << img.cols << "x" << img.rows << endl;
+    if (opts.verbose) cout << "Verbose: Image loaded successfully. Size: " << img.cols << "x" << img.rows << endl;
 
     Mat overlay = Mat::zeros(img.size(), img.type());
 
-    if (args.multi_person) {
+    if (opts.multi_person) {
         runMultiPersonPipeline(img, overlay);
     } else {
         runSinglePersonPipeline(img, overlay);
     }
 
     Mat final_output;
-    addWeighted(img, args.blend_factor, overlay, 1.0, 0, final_output);
+    addWeighted(img, opts.blend_factor, overlay, 1.0, 0, final_output);
 
-    string output_path = args.output_file.empty() ? "unified_output.jpg" : args.output_file;
+    string output_path = opts.output_file.empty() ? "unified_output.jpg" : opts.output_file;
     imwrite(output_path, final_output);
     cout << "Done. Output saved to: " << output_path << "\n";
   }
 
 private:
-  // Internal configuration structure
-  struct Args {
-    string image_path;
-    string output_file;
-    float blend_factor = 0.5f;
-    float threshold = 0.1f;
-    float person_threshold = 0.5f;
-    float nms_threshold = 0.4f;
-    string models_dir = "./models";
-    bool enable_validation = true;
-    bool enable_interpolation = true;
-    bool process_body = true; // Default mode is now just body
-    bool process_hand = false;
-    bool process_face = false;
-    bool verbose = false;
-    bool multi_person = false;
-  };
-  Args args;
+  ProgramOptions opts;
 
   // Model containers
   Net body_net, hand_net, face_net, person_net;
 
   // --- Private Methods ---
-
-  void printUsage() {
-      cerr << "Usage: openpose --input <file> --output <file> [OPTIONS]\n"
-           << "Options:\n"
-           << "  -t, --threshold <value>    Pose keypoint detection threshold (0.0-1.0, default: 0.1)\n"
-           << "  --person-threshold <value> Person detection confidence threshold for multi-person (default: 0.5)\n"
-           << "  --nms-threshold <value>    Non-Maximum Suppression threshold for multi-person (default: 0.4)\n"
-           << "  -b, --blend <factor>       Original image opacity (0.0-1.0, default: 0.5)\n"
-           << "  -m, --models <directory>   Models base directory (default: ./models)\n"
-           << "  -M, --mode <modes>         Modes: comma-separated list of 'body', 'hand', 'face', 'all'. (default: body)\n"
-           << "  -v, --verbose              Enable verbose output.\n"
-           << "  --multi-person             Enable multi-person detection (requires person model).\n"
-           << "  --no-validate-connectivity Deactivates filtering of noisy points (on by default)\n"
-           << "  --no-interpolate           Deactivates estimation of missing joints (on by default)\n";
-  }
-
-  void parseFloat(const char *s, float &out) {
-      try {
-          out = stof(s);
-      } catch (...) {
-          // Keep default value on parse error
-      }
-  }
-
-  void parseArgs(int argc, char **argv) {
-      int opt;
-      int option_index = 0;
-      static struct option long_options[] = {
-          {"input", required_argument, 0, 'i'},
-          {"output", required_argument, 0, 'o'},
-          {"blend", required_argument, 0, 'b'},
-          {"threshold", required_argument, 0, 't'},
-          {"person-threshold", required_argument, 0, 5},
-          {"nms-threshold", required_argument, 0, 4},
-          {"models", required_argument, 0, 'm'},
-          {"mode", required_argument, 0, 'M'},
-          {"verbose", no_argument, 0, 'v'},
-          {"multi-person", no_argument, 0, 3},
-          {"no-validate-connectivity", no_argument, 0, 1},
-          {"no-interpolate", no_argument, 0, 2},
-          {0, 0, 0, 0}};
-
-      bool mode_was_set = false;
-      while ((opt = getopt_long(argc, argv, "i:o:b:t:m:M:v", long_options, &option_index)) != -1) {
-          switch (opt) {
-          case 'i': args.image_path = optarg; break;
-          case 'o': args.output_file = optarg; break;
-          case 'b': parseFloat(optarg, args.blend_factor); break;
-          case 't': parseFloat(optarg, args.threshold); break;
-          case 'm': args.models_dir = optarg; break;
-          case 'v': args.verbose = true; break;
-          case 'M':
-              mode_was_set = true;
-              args.process_body = false;
-              args.process_hand = false;
-              args.process_face = false;
-              {
-                  string modes_str(optarg);
-                  stringstream ss(modes_str);
-                  string mode;
-                  while(getline(ss, mode, ',')) {
-                      mode.erase(0, mode.find_first_not_of(" \t\n\r"));
-                      mode.erase(mode.find_last_not_of(" \t\n\r") + 1);
-                      if (mode == "body") args.process_body = true;
-                      else if (mode == "hand" || mode == "hands") args.process_hand = true;
-                      else if (mode == "face") args.process_face = true;
-                      else if (mode == "all") {
-                          args.process_body = true;
-                          args.process_hand = true;
-                          args.process_face = true;
-                      } else {
-                          cerr << "Invalid mode specified: " << mode << endl;
-                          printUsage();
-                          exit(1);
-                      }
-                  }
-              }
-              break;
-          case 1: args.enable_validation = false; break;
-          case 2: args.enable_interpolation = false; break;
-          case 3: args.multi_person = true; break;
-          case 4: parseFloat(optarg, args.nms_threshold); break;
-          case 5: parseFloat(optarg, args.person_threshold); break;
-          case '?': exit(1);
-          default: break;
-          }
-      }
-      if (mode_was_set && !args.process_body && !args.process_hand && !args.process_face) {
-          args.process_body = true;
-      }
-  }
-
   map<string, string> resolveModelPaths(ModelType type) {
     map<string, string> paths;
-    string models_dir_clean = args.models_dir;
+    string models_dir_clean = opts.models_dir;
     if (!models_dir_clean.empty() && models_dir_clean.back() == '/')
         models_dir_clean.pop_back();
     string base;
@@ -248,7 +141,7 @@ private:
       const string& proto = paths.at("prototxt");
       const string& model = paths.at("caffemodel");
 
-      if (args.verbose) {
+      if (opts.verbose) {
           cout << "Verbose: Loading model files:" << endl;
           cout << "  Prototxt: " << proto << endl;
           cout << "  Caffemodel: " << model << endl;
@@ -274,23 +167,23 @@ private:
 
   void loadAllModels() {
       // Body model is needed for body AND for hand detection (to find wrists).
-      if ((args.process_body || args.process_hand) && body_net.empty()) {
-          if (args.verbose) cout << "Verbose: Loading BODY model..." << endl;
+      if ((opts.process_body || opts.process_hand) && body_net.empty()) {
+          if (opts.verbose) cout << "Verbose: Loading BODY model..." << endl;
           auto paths = resolveModelPaths(ModelType::BODY);
           if (!loadModel(body_net, paths)) throw runtime_error("Failed to load BODY model.");
       }
-      if (args.process_hand && hand_net.empty()) {
-          if (args.verbose) cout << "Verbose: Loading HAND model..." << endl;
+      if (opts.process_hand && hand_net.empty()) {
+          if (opts.verbose) cout << "Verbose: Loading HAND model..." << endl;
           auto paths = resolveModelPaths(ModelType::HAND);
           if (!loadModel(hand_net, paths)) throw runtime_error("Failed to load HAND model.");
       }
-      if (args.process_face && face_net.empty()) {
-          if (args.verbose) cout << "Verbose: Loading FACE model..." << endl;
+      if (opts.process_face && face_net.empty()) {
+          if (opts.verbose) cout << "Verbose: Loading FACE model..." << endl;
           auto paths = resolveModelPaths(ModelType::FACE);
           if (!loadModel(face_net, paths)) throw runtime_error("Failed to load FACE model.");
       }
-      if (args.multi_person && person_net.empty()) {
-          if (args.verbose) cout << "Verbose: Loading PERSON detector model..." << endl;
+      if (opts.multi_person && person_net.empty()) {
+          if (opts.verbose) cout << "Verbose: Loading PERSON detector model..." << endl;
           auto paths = resolveModelPaths(ModelType::PERSON);
           if(!loadModel(person_net, paths)) throw runtime_error("Failed to load PERSON model.");
       }

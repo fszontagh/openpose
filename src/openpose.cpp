@@ -49,7 +49,6 @@ int main(int argc, char **argv) {
   Net body_net, hand_net, face_net;
   vector<float> bodyKeypoints, handKeypoints, faceKeypoints;
 
-  // Determine which parts to process based on mode
   bool process_body =
       (args.mode == Mode::BODY || args.mode == Mode::BODY_AND_HAND ||
        args.mode == Mode::ALL);
@@ -58,11 +57,10 @@ int main(int argc, char **argv) {
        args.mode == Mode::ALL);
   bool process_face = (args.mode == Mode::FACE || args.mode == Mode::ALL);
 
-  // --- MODEL EXECUTION LOGIC ---
+  bool run_body_model_first =
+      process_body || process_hand || (process_face && args.mode != Mode::FACE);
 
-  // Run BODY model if needed for body, hand, or as a first pass for face
-  if (process_body || process_hand ||
-      (process_face && args.mode != Mode::FACE)) {
+  if (run_body_model_first) {
     if (args.verbose)
       cout << "Verbose: Loading BODY model..." << endl;
     auto body_paths = resolveModelPaths(ModelType::BODY, args.models_dir);
@@ -77,7 +75,6 @@ int main(int argc, char **argv) {
       cout << "Verbose: BODY estimation completed." << endl;
   }
 
-  // Run HAND model if requested
   if (process_hand) {
     if (bodyKeypoints.empty()) {
       cerr << "Warning: Hand detection requires body detection to locate "
@@ -136,7 +133,6 @@ int main(int argc, char **argv) {
     }
   }
 
-  // Run FACE model if requested
   if (process_face) {
     if (args.verbose)
       cout << "Verbose: Loading FACE model..." << endl;
@@ -148,8 +144,6 @@ int main(int argc, char **argv) {
     auto haar_paths = resolveModelPaths(ModelType::FACE_HAAR, args.models_dir);
     string haar_path = haar_paths["haarcascade"];
 
-    // The bodyKeypoints vector will be empty if only --mode face is used,
-    // which correctly triggers the Haar fallback in getFaceRect.
     Rect face_rect = getFaceRect(bodyKeypoints, img, haar_path, args.verbose);
 
     if (face_rect.area() > 0) {
@@ -170,7 +164,6 @@ int main(int argc, char **argv) {
       cout << "Verbose: FACE estimation completed." << endl;
   }
 
-  // --- POST-PROCESSING ---
   if (args.verbose)
     cout << "Verbose: Post-processing keypoints..." << endl;
   if (process_body) {
@@ -196,41 +189,45 @@ int main(int argc, char **argv) {
                                          false, args.verbose);
   }
 
-  // --- DRAWING ---
   if (args.verbose)
     cout << "Verbose: Drawing keypoints on the image..." << endl;
-  Mat output = img.clone();
+  // --- DRAWING ---
+  // FIX: Create a black overlay instead of cloning the image.
+  Mat overlay = Mat::zeros(img.size(), img.type());
+
   if (process_body) {
-    drawKeypoints(output, bodyKeypoints, ModelType::BODY, Scalar(255, 0, 0));
+    drawKeypoints(overlay, bodyKeypoints, ModelType::BODY, Scalar(255, 0, 0));
   }
   if (process_hand) {
-    drawKeypoints(output, handKeypoints, ModelType::HAND, Scalar(0, 255, 0));
+    drawKeypoints(overlay, handKeypoints, ModelType::HAND, Scalar(0, 255, 0));
   }
   if (process_face) {
-    drawKeypoints(output, faceKeypoints, ModelType::FACE, Scalar(0, 255, 255));
+    drawKeypoints(overlay, faceKeypoints, ModelType::FACE, Scalar(0, 255, 255));
   }
 
   // Draw connecting lines for hands
   if (process_hand && !bodyKeypoints.empty() && !handKeypoints.empty()) {
     if (bodyKeypoints.size() > 4 * 3 + 2 && handKeypoints.size() > 21 * 3 + 2 &&
         bodyKeypoints[4 * 3 + 2] > 0 && handKeypoints[21 * 3 + 2] > 0)
-      line(output, Point(bodyKeypoints[4 * 3], bodyKeypoints[4 * 3 + 1]),
+      line(overlay, Point(bodyKeypoints[4 * 3], bodyKeypoints[4 * 3 + 1]),
            Point(handKeypoints[21 * 3], handKeypoints[21 * 3 + 1]),
            Scalar(0, 255, 0), max(1, (img.cols + img.rows) / 400));
     if (bodyKeypoints.size() > 7 * 3 + 2 && handKeypoints.size() > 0 * 3 + 2 &&
         bodyKeypoints[7 * 3 + 2] > 0 && handKeypoints[0 * 3 + 2] > 0)
-      line(output, Point(bodyKeypoints[7 * 3], bodyKeypoints[7 * 3 + 1]),
+      line(overlay, Point(bodyKeypoints[7 * 3], bodyKeypoints[7 * 3 + 1]),
            Point(handKeypoints[0 * 3], handKeypoints[0 * 3 + 1]),
            Scalar(0, 255, 0), max(1, (img.cols + img.rows) / 400));
   }
 
   // --- FINAL OUTPUT ---
-  Mat blended;
-  addWeighted(output, args.blend_factor, img, 1 - args.blend_factor, 0,
-              blended);
+  // FIX: Blend the background image (img) with the keypoint overlay.
+  // The blend_factor now correctly controls the opacity of the original image.
+  Mat final_output;
+  addWeighted(img, args.blend_factor, overlay, 1.0, 0, final_output);
+
   string output_path =
       args.output_file.empty() ? "unified_output.jpg" : args.output_file;
-  imwrite(output_path, blended);
+  imwrite(output_path, final_output);
   cout << "Done. Output saved to: " << output_path << "\n";
   return 0;
 }

@@ -13,7 +13,11 @@ struct ProgramOptions {
     float threshold = 0.1f;
     float person_threshold = 0.5f;
     float nms_threshold = 0.4f;
+#ifdef RELEASE_BUILD
+    std::string models_dir = "/usr/share/openpose-cli/models";
+#else
     std::string models_dir = "./models";
+#endif
     bool enable_validation = true;
     bool enable_interpolation = true;
     bool process_body = true;

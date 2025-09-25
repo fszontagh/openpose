@@ -1,0 +1,8 @@
+Package: openpose-cli
+Version: 1.0.0
+Architecture: amd64
+Maintainer: Ferenc Szontágh <openpose@fsociety.hu>
+Depends: libopencv-core4.8, libopencv-imgproc4.8, libopencv-dnn4.8, libopencv-highgui4.8, libopencv-videoio4.8, libopencv-imgcodecs4.8
+Description: A command-line tool for OpenPose for images.
+ This package contains a command-line interface for running OpenPose,
+ a keypoint detection library for body, face, hands, and foot estimation on single images.

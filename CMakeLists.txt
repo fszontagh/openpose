@@ -11,3 +11,8 @@ include_directories(includes)
 
 add_executable(openpose src/main.cpp src/openpose.cpp src/parameter_handler.cpp)
 target_link_libraries(openpose ${OpenCV_LIBS})
+
+# Add a compile definition for release builds
+target_compile_definitions(openpose PRIVATE
+  $<$<CONFIG:Release>:RELEASE_BUILD>
+)

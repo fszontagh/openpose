@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Get version from tag
+      id: get_version
+      run: echo "VERSION=${{ github.ref_name#v }}" >> $GITHUB_ENV
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libopencv-dev curl
+
+    - name: Configure CMake
+      run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build project
+      run: cmake --build build
+
+    - name: Create tar.gz archive
+      run: |
+        mkdir -p release
+        tar -czvf release/openpose-cli-${{ env.VERSION }}.tar.gz -C build openpose
+
+    - name: Create Debian package structure
+      run: |
+        mkdir -p debian/DEBIAN
+        mkdir -p debian/usr/bin
+        mkdir -p debian/usr/share/openpose-cli
+        cp build/openpose debian/usr/bin/
+        cp scripts/download-models.sh debian/usr/share/openpose-cli/
+
+    - name: Create Debian control file
+      run: |
+        cat <<EOF > debian/DEBIAN/control
+        Package: openpose-cli
+        Version: ${{ env.VERSION }}
+        Architecture: amd64
+        Maintainer: Ferenc Szontágh <openpose@fsociety.hu>
+        Depends: libopencv-core4.8, libopencv-imgproc4.8, libopencv-dnn4.8, libopencv-highgui4.8, libopencv-videoio4.8, libopencv-imgcodecs4.8
+        Description: A command-line tool for OpenPose for images.
+         This package contains a command-line interface for running OpenPose,
+         a keypoint detection library for body, face, hands, and foot estimation on single images.
+        EOF
+
+    - name: Create Debian post-installation script
+      run: |
+        cat <<EOF > debian/DEBIAN/postinst
+        #!/bin/bash
+        set -e
+        chmod +x /usr/share/openpose-cli/download-models.sh
+        /usr/share/openpose-cli/download-models.sh
+        EOF
+        chmod +x debian/DEBIAN/postinst
+
+    - name: Build Debian package
+      run: |
+        dpkg-deb --build debian
+        mv debian.deb release/openpose-cli-${{ env.VERSION }}.deb
+
+    - name: Create Release and Upload Artifacts
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          release/openpose-cli-${{ env.VERSION }}.tar.gz
+          release/openpose-cli-${{ env.VERSION }}.deb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

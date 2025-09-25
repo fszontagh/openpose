@@ -1,0 +1,6 @@
+#!/bin/bash
+set -e
+chmod +x /usr/share/openpose-cli/download-models.sh
+echo "Downloading models (this may take a while)..."
+/usr/share/openpose-cli/download-models.sh > /dev/null 2>&1
+echo "Models downloaded successfully."

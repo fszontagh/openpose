@@ -32,6 +32,21 @@ const vector<Scalar> PERSON_COLORS = {Scalar(255, 0, 0),   Scalar(0, 255, 0),
                                       Scalar(0, 0, 255),   Scalar(255, 255, 0),
                                       Scalar(255, 0, 255), Scalar(0, 255, 255)};
 
+const vector<Scalar> RAINBOW_COLORS = {
+    Scalar(255, 0, 0),    // Red
+    Scalar(255, 128, 0),  // Orange
+    Scalar(255, 255, 0),  // Yellow
+    Scalar(128, 255, 0),  // Light Green
+    Scalar(0, 255, 0),    // Green
+    Scalar(0, 255, 128),  // Cyan-Green
+    Scalar(0, 255, 255),  // Cyan
+    Scalar(0, 128, 255),  // Light Blue
+    Scalar(0, 0, 255),    // Blue
+    Scalar(128, 0, 255),  // Purple
+    Scalar(255, 0, 255),  // Magenta
+    Scalar(255, 0, 128)   // Pink
+};
+
 const vector<pair<int, int>> POSE_PAIRS_BODY_25 = {
     {1, 8},   {1, 2},   {1, 5},   {2, 3},   {3, 4},   {5, 6},   {6, 7},
     {8, 9},   {9, 10},  {10, 11}, {8, 12},  {12, 13}, {13, 14}, {1, 0},

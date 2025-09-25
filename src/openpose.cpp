@@ -193,55 +193,54 @@ void OpenPose::drawKeypoints(cv::Mat &image, const vector<float> &keypoints, Mod
     }
 
     const vector<pair<int, int>> *pairs;
+    const vector<Scalar>* colors = &PERSON_COLORS; // Default to person colors
+    bool use_rainbow = (type == ModelType::BODY && !opts.multi_person);
+
     if (type == ModelType::BODY) {
         pairs = &POSE_PAIRS_BODY_25;
+        if(use_rainbow) colors = &RAINBOW_COLORS;
     } else if (type == ModelType::FACE) {
         pairs = &POSE_PAIRS_FACE;
     } else { // HAND
         static vector<pair<int, int>> HAND_PAIRS;
         HAND_PAIRS.clear();
-        if (keypoints.size() >= 21 * 3) { // Left Hand
-            HAND_PAIRS.insert(HAND_PAIRS.end(), HAND_LEFT_PAIRS.begin(), HAND_LEFT_PAIRS.end());
-        }
-        if (keypoints.size() >= 42 * 3) { // Right Hand
-            for(const auto& p : HAND_RIGHT_PAIRS) {
-                HAND_PAIRS.push_back({p.first, p.second});
-            }
-        }
+        if (keypoints.size() >= 21 * 3) { HAND_PAIRS.insert(HAND_PAIRS.end(), HAND_LEFT_PAIRS.begin(), HAND_LEFT_PAIRS.end()); }
+        if (keypoints.size() >= 42 * 3) { for(const auto& p : HAND_RIGHT_PAIRS) { HAND_PAIRS.push_back({p.first, p.second}); } }
         pairs = &HAND_PAIRS;
     }
 
-    // Dynamically set line thickness based on image resolution.
-    int lineThickness;
-    if (type == ModelType::FACE) {
-        // Thinner lines are needed for the face due to dense keypoints.
-        lineThickness = max(1, (image.cols + image.rows) / 1200);
-    } else {
-        // Thicker lines are fine for body and hands.
-        lineThickness = max(1, (image.cols + image.rows) / 800);
-    }
+    int lineThickness = max(2, (image.cols + image.rows) / 400);
 
-    set<int> connected_indices;
+    map<int, Scalar> point_colors;
 
-    // Draw lines and collect indices of connected points.
+    int color_idx = 0;
     for (const auto &p : *pairs) {
         if (p.first >= points.size() || p.second >= points.size()) continue;
+
+        // Skip foot keypoints if not explicitly enabled
+        if (type == ModelType::BODY && !opts.draw_foot) {
+            if (p.first >= 19 && p.first <= 24) continue;
+            if (p.second >= 19 && p.second <= 24) continue;
+        }
+
         Point pA = points[p.first];
         Point pB = points[p.second];
+
         if (pA.x > 0 && pB.x > 0) {
-            line(image, pA, pB, color, lineThickness, LINE_AA);
-            connected_indices.insert(p.first);
-            connected_indices.insert(p.second);
+            Scalar current_color = use_rainbow ? (*colors)[color_idx % colors->size()] : color;
+            line(image, pA, pB, current_color, lineThickness, LINE_AA);
+
+            point_colors[p.first] = current_color;
+            point_colors[p.second] = current_color;
+
+            if(use_rainbow) color_idx++;
         }
     }
 
-    // Only draw circles for points that are part of a connection.
-    for (int index : connected_indices) {
-        if (index < points.size()) {
-            const auto &point = points[index];
-            if (point.x > 0) {
-                circle(image, point, lineThickness + 1, color, FILLED, LINE_AA);
-            }
+    int dotSize = max(3, lineThickness);
+    for(const auto& [idx, col] : point_colors){
+        if(idx < points.size() && points[idx].x > 0){
+            circle(image, points[idx], dotSize, col, FILLED, LINE_AA);
         }
     }
 }

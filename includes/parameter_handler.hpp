@@ -21,6 +21,7 @@ struct ProgramOptions {
     bool process_face = false;
     bool verbose = false;
     bool multi_person = false;
+    bool draw_foot = false;
 };
 
 // Custom exception for parsing errors

@@ -32,6 +32,7 @@ void ParameterHandler::displayHelp() {
 
       << "  --no-interpolate           Deactivates estimation of missing "
          "joints (on by default).\n"
+      << "  --draw-foot                Draw the foot keypoints (off by default).\n"
       << "  -h, --help                 Display this help message.\n";
 }
 
@@ -67,6 +68,7 @@ ProgramOptions ParameterHandler::parse(int argc, char **argv) {
       {"multi-person", no_argument, 0, 1003},
       {"no-validate-connectivity", no_argument, 0, 1004},
       {"no-interpolate", no_argument, 0, 1005},
+      {"draw-foot", no_argument, 0, 1006},
       {"help", no_argument, 0, 'h'},
       {0, 0, 0, 0}};
 
@@ -136,6 +138,9 @@ ProgramOptions ParameterHandler::parse(int argc, char **argv) {
       break;
     case 1005:
       opts.enable_interpolation = false;
+      break;
+    case 1006:
+      opts.draw_foot = true;
       break;
     case '?':
       // getopt_long already printed an error message.
